@@ -1,111 +1,13 @@
-name: github-action
-run-name: ${{ github.actor }} builds and deploys to Azure AKS
+name: Deploy to AKS
 
 on:
   push:
     branches:
       - main
 
-env:
-  ACR_NAME: project20registry
-  RG: project20-rsrcgrp
-  AKS: project20-aks
-
 jobs:
-  docker:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ env.ACR_NAME }}
-
-      - name: Build Maven Projects
-        run: |
-          mvn clean package -f ./author/pom.xml -DskipTests
-          mvn clean package -f ./writing/pom.xml -DskipTests
-          mvn clean package -f ./point/pom.xml -DskipTests
-          mvn clean package -f ./subscriber/pom.xml -DskipTests
-          mvn clean package -f ./platform/pom.xml -DskipTests
-          mvn clean package -f ./aigeneration/pom.xml -DskipTests
-
-      - name: Docker Build and push for Author (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./author
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/author:latest
-            ${{ env.ACR_NAME }}.azurecr.io/author:${{ github.sha }}
-
-      - name: Docker Build and push for Writing (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./writing
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/writing:latest
-            ${{ env.ACR_NAME }}.azurecr.io/writing:${{ github.sha }}
-
-      - name: Docker Build and push for Point (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./point
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/point:latest
-            ${{ env.ACR_NAME }}.azurecr.io/point:${{ github.sha }}
-
-      - name: Docker Build and push for Subscriber (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./subscriber
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/subscriber:latest
-            ${{ env.ACR_NAME }}.azurecr.io/subscriber:${{ github.sha }}
-
-      - name: Docker Build and push for Platform (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./platform
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/platform:latest
-            ${{ env.ACR_NAME }}.azurecr.io/platform:${{ github.sha }}
-
-      - name: Docker Build and push for Aigeneration (to ACR)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./aigeneration
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/aigeneration:latest
-            ${{ env.ACR_NAME }}.azurecr.io/aigeneration:${{ github.sha }}
-
   deploy:
-    needs: docker
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -118,35 +20,10 @@ jobs:
       - name: Set AKS context
         uses: azure/aks-set-context@v2
         with:
-          resource-group: ${{ env.RG }}
-          cluster-name: ${{ env.AKS }}
+          resource-group: project20-rsrcgrp
+          cluster-name: project20-aks
 
-      - name: Deploy Author to AKS
+      - name: Apply Kubernetes manifests
         run: |
-          kubectl set image deployment/author-deploy author=${{ env.ACR_NAME }}.azurecr.io/author:latest
-          kubectl rollout status deployment/author-deploy
-
-      - name: Deploy Writing to AKS
-        run: |
-          kubectl set image deployment/writing-deploy writing=${{ env.ACR_NAME }}.azurecr.io/writing:latest
-          kubectl rollout status deployment/writing-deploy
-
-      - name: Deploy Point to AKS
-        run: |
-          kubectl set image deployment/point-deploy point=${{ env.ACR_NAME }}.azurecr.io/point:latest
-          kubectl rollout status deployment/point-deploy
-
-      - name: Deploy Subscriber to AKS
-        run: |
-          kubectl set image deployment/subscriber-deploy subscriber=${{ env.ACR_NAME }}.azurecr.io/subscriber:latest
-          kubectl rollout status deployment/subscriber-deploy
-
-      - name: Deploy Platform to AKS
-        run: |
-          kubectl set image deployment/platform-deploy platform=${{ env.ACR_NAME }}.azurecr.io/platform:latest
-          kubectl rollout status deployment/platform-deploy
-
-      - name: Deploy Aigeneration to AKS
-        run: |
-          kubectl set image deployment/aigeneration-deploy aigeneration=${{ env.ACR_NAME }}.azurecr.io/aigeneration:latest
-          kubectl rollout status deployment/aigeneration-deploy
+          kubectl apply -f kubernetes/template.yml
+          kubectl apply -f kubernetes/test.yml
